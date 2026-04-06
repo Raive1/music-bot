@@ -231,7 +231,18 @@ async def on_message(message):
     # Передаем команду дальше, в твой код
     await bot.process_commands(message)
 
-# --- Запуск ---
+@bot.event
+async def on_ready():
+    print(f'✅ Бот {bot.user} готов!')
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    print(f'📩 Получено: {message.content}')
+    if message.content == '!ping':
+        await message.channel.send('Pong!')
+
 if __name__ == "__main__":
     keep_alive()
     bot.run(TOKEN)
