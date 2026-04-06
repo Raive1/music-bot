@@ -16,6 +16,18 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+@bot.event
+async def on_ready():
+    print(f'✅ Бот {bot.user} подключился к Discord!')
+    print(f'📡 Он на {len(bot.guilds)} серверах.')
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    print(f'📩 Сообщение: "{message.content}" от {message.author}')
+    await bot.process_commands(message)
+
 # Настройки для yt-dlp
 ydl_opts = {
     'format': 'bestaudio/best',
