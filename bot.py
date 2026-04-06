@@ -221,6 +221,16 @@ def keep_alive():
     t.daemon = True
     t.start()
 
+@bot.event
+async def on_message(message):
+    # Игнорируем сообщения от самого бота
+    if message.author == bot.user:
+        return
+    # Печатаем ВСЕ сообщения в лог
+    print(f"🔍 Получено сообщение: '{message.content}' от {message.author}")
+    # Передаем команду дальше, в твой код
+    await bot.process_commands(message)
+
 # --- Запуск ---
 if __name__ == "__main__":
     keep_alive()
