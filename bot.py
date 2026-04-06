@@ -4,8 +4,10 @@ import yt_dlp as youtube_dl
 import asyncio
 import os
 from dotenv import load_dotenv
+import threading
+from flask import Flask
 
-# Загружаем токен из файла .env
+# Загружаем токен
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
@@ -26,18 +28,16 @@ ydl_opts = {
     'no_warnings': True,
 }
 
-# Очередь песен (словарь: guild_id -> список словарей с информацией о треках)
+# Очередь
 queues = {}
 
 def get_queue(ctx):
-    """Получить очередь для текущего сервера"""
     guild_id = ctx.guild.id
     if guild_id not in queues:
         queues[guild_id] = []
     return queues[guild_id]
 
 def search_youtube(query):
-    """Ищет видео на YouTube и возвращает URL и название"""
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         try:
             if 'youtube.com' in query or 'youtu.be' in query:
@@ -51,7 +51,6 @@ def search_youtube(query):
             return None, None
 
 async def play_next(ctx):
-    """Воспроизводит следующий трек из очереди"""
     queue = get_queue(ctx)
     if len(queue) > 0:
         next_track = queue.pop(0)
@@ -73,16 +72,14 @@ async def play_next(ctx):
         ctx.voice_client.play(source, after=after_playing)
         await ctx.send(f"🎵 Сейчас играет: **{title}**")
     else:
-        # Очередь пуста, бот отключается через 60 секунд бездействия
-        await ctx.send("📭 Очередь пуста. Отключаюсь через 60 секунд бездействия...")
+        await ctx.send("📭 Очередь пуста. Отключаюсь...")
         await asyncio.sleep(60)
         if ctx.voice_client and not ctx.voice_client.is_playing():
             await ctx.voice_client.disconnect()
-            await ctx.send("👋 Отключился из-за бездействия")
 
+# --- Команды бота ---
 @bot.command()
 async def join(ctx):
-    """Бот заходит в ваш голосовой канал"""
     if ctx.author.voice:
         channel = ctx.author.voice.channel
         if ctx.voice_client:
@@ -95,25 +92,19 @@ async def join(ctx):
 
 @bot.command()
 async def play(ctx, *, query):
-    """Добавляет песню в очередь и начинает играть, если ничего не играет"""
-    # Проверяем, в голосовом ли канаде
     if not ctx.voice_client:
         await ctx.invoke(join)
     
     await ctx.send(f"🔍 Ищу: **{query}**...")
-    
-    # Ищем аудио
     url, title = await asyncio.to_thread(search_youtube, query)
     
     if url is None:
-        await ctx.send("❌ Не удалось найти трек. Попробуйте другое название или ссылку.")
+        await ctx.send("❌ Не удалось найти трек.")
         return
     
-    # Добавляем трек в очередь
     queue = get_queue(ctx)
     queue.append({'url': url, 'title': title})
     
-    # Если ничего не играет, начинаем воспроизведение
     if not ctx.voice_client.is_playing():
         next_track = queue.pop(0)
         ffmpeg_options = {
@@ -124,7 +115,7 @@ async def play(ctx, *, query):
         
         def after_playing(error):
             if error:
-                print(f"Ошибка воспроизведения: {error}")
+                print(f"Ошибка: {error}")
             asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
         
         ctx.voice_client.play(source, after=after_playing)
@@ -134,7 +125,6 @@ async def play(ctx, *, query):
 
 @bot.command()
 async def skip(ctx):
-    """Пропускает текущий трек и начинает следующий из очереди"""
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.stop()
         await ctx.send("⏭️ Трек пропущен")
@@ -143,16 +133,13 @@ async def skip(ctx):
 
 @bot.command()
 async def queue(ctx):
-    """Показывает текущую очередь песен"""
     queue = get_queue(ctx)
     if len(queue) == 0:
         await ctx.send("📭 Очередь пуста")
     else:
-        # Показываем первые 10 треков в очереди
         queue_list = []
         for i, track in enumerate(queue[:10], 1):
             queue_list.append(f"**{i}.** {track['title']}")
-        
         embed = discord.Embed(
             title="📜 Очередь песен",
             description="\n".join(queue_list),
@@ -164,13 +151,10 @@ async def queue(ctx):
 
 @bot.command()
 async def stop(ctx):
-    """Останавливает музыку, очищает очередь и отключает бота"""
     if ctx.voice_client:
-        # Очищаем очередь
         guild_id = ctx.guild.id
         if guild_id in queues:
             queues[guild_id].clear()
-        
         await ctx.voice_client.disconnect()
         await ctx.send("👋 Отключаюсь... Очередь очищена")
     else:
@@ -178,7 +162,6 @@ async def stop(ctx):
 
 @bot.command()
 async def pause(ctx):
-    """Ставит музыку на паузу"""
     if ctx.voice_client and ctx.voice_client.is_playing():
         ctx.voice_client.pause()
         await ctx.send("⏸ Пауза")
@@ -187,7 +170,6 @@ async def pause(ctx):
 
 @bot.command()
 async def resume(ctx):
-    """Продолжает играть после паузы"""
     if ctx.voice_client and ctx.voice_client.is_paused():
         ctx.voice_client.resume()
         await ctx.send("▶ Продолжаю")
@@ -196,7 +178,6 @@ async def resume(ctx):
 
 @bot.command()
 async def clear(ctx):
-    """Очищает очередь, не останавливая текущую музыку"""
     guild_id = ctx.guild.id
     if guild_id in queues:
         count = len(queues[guild_id])
@@ -212,26 +193,23 @@ async def on_command_error(ctx, error):
     else:
         print(f"Ошибка: {error}")
 
-from flask import Flask
-from threading import Thread
-import os
-
+# --- Flask сервер для Render ---
 app = Flask('')
 
 @app.route('/')
 def home():
     return "Бот работает!"
 
-def run():
+def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = Thread(target=run)
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
     t.start()
 
-keep_alive()
-
-# Запускаем бота
+# --- Запуск ---
 if __name__ == "__main__":
+    keep_alive()
     bot.run(TOKEN)
