@@ -16,6 +16,23 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# --- Flask сервер для Render ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Бот работает!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+# --- События бота (только один раз!) ---
 @bot.event
 async def on_ready():
     print(f'✅ Бот {bot.user} подключился к Discord!')
@@ -205,44 +222,7 @@ async def on_command_error(ctx, error):
     else:
         print(f"Ошибка: {error}")
 
-# --- Flask сервер для Render ---
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Бот работает!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-@bot.event
-async def on_message(message):
-    # Игнорируем сообщения от самого бота
-    if message.author == bot.user:
-        return
-    # Печатаем ВСЕ сообщения в лог
-    print(f"🔍 Получено сообщение: '{message.content}' от {message.author}")
-    # Передаем команду дальше, в твой код
-    await bot.process_commands(message)
-
-@bot.event
-async def on_ready():
-    print(f'✅ Бот {bot.user} готов!')
-
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return
-    print(f'📩 Получено: {message.content}')
-    if message.content == '!ping':
-        await message.channel.send('Pong!')
-
+# --- Запуск ---
 if __name__ == "__main__":
     keep_alive()
     bot.run(TOKEN)
